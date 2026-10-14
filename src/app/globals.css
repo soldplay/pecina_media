@@ -1,0 +1,393 @@
+@import 'tailwindcss';
+
+/*
+ * Pecina Media — Design-Tokens und CSS-Grundlagen (DESIGN_SPEC §2, §5.9).
+ * Kontrastregeln: Orange-Text #D17F0C nur auf Ink/Anthrazit/Panel,
+ * #9D5F09 nur auf Paper; nie Paper auf Orange.
+ */
+
+/* `static`: alle Variablen werden immer ausgegeben, auch wenn keine Utility sie nutzt
+   (Pakete verwenden sie in eigenem CSS bzw. inline). */
+@theme static {
+  --color-ink: #0e0e0e;
+  --color-anthracite: #1c1c1c;
+  --color-graphite: #2a2826;
+  --color-paper: #f4f1ea;
+  --color-paper-2: #eae5da;
+  --color-brand: #d17f0c;
+  --color-brand-text: #9d5f09;
+  --color-glow: #ffb257;
+  --color-blade: #ffe3b8;
+  --color-muted-dark: #b5afa4;
+  --color-muted-light: #5c574f;
+  --color-panel: rgba(14, 14, 14, 0.92);
+  --color-line-dark: rgba(244, 241, 234, 0.16);
+  --color-line-light: rgba(14, 14, 14, 0.16);
+
+  --font-display: var(--font-archivo), 'Arial Narrow', sans-serif;
+  --font-sans: var(--font-archivo), Arial, sans-serif;
+  --font-round: var(--font-comfortaa), sans-serif;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-cut: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+
+  --radius-sm: 4px;
+  --radius-plate: 6px;
+  --radius-pill: 999px;
+}
+
+:root {
+  /* Leitmotiv: Schnitt mit 6°, tan 6° · 100vw, Spalt 9 % der Versalhoehe */
+  --cut-angle: -6deg;
+  --cut-rise: 10.51vw;
+  --cut-gap: 0.065em;
+  --header-h: 72px;
+
+  --dur-instant: 120ms;
+  --dur-fast: 200ms;
+  --dur-base: 350ms;
+  --dur-slow: 600ms;
+  --dur-reveal: 900ms;
+  --dur-cut: 1100ms;
+
+  /* Spacing-Basis 4 px (§2.4) fuer eigenes CSS; Tailwind-Spacing (p-1 = 4 px) passt dazu */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --space-10: 128px;
+  --space-11: 192px;
+}
+
+@media (max-width: 1023.98px) {
+  :root {
+    --header-h: 60px;
+  }
+}
+
+/*
+ * Header scrollt bei niedriger Viewport-Hoehe mit (Header.tsx, z. B. 400 % Zoom): kein Platz fuer ihn
+ * reservieren. Bewusst ausserhalb von @layer base (dort verschachtelt verwarf der Build die Regel).
+ */
+@media (max-height: 480px) {
+  html {
+    scroll-padding-top: 16px;
+  }
+}
+
+/* Registriert, damit GSAP/CSS die Schnitt-Maske interpolieren koennen. */
+@property --cut-open {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --cut-pos {
+  syntax: '<percentage>';
+  inherits: true;
+  initial-value: 50%;
+}
+
+@keyframes pm-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@keyframes pm-failsafe {
+  to {
+    opacity: 1;
+  }
+}
+
+/* Hover-Schnitt (.cut-hover): Spalt in der Zeilenmitte oeffnet und schliesst wieder. */
+@keyframes pm-cut-flash {
+  0%,
+  100% {
+    --cut-open: 0px;
+  }
+  40% {
+    --cut-open: var(--cut-gap);
+  }
+}
+
+/* ------------------------------------------------------------------ Base */
+
+@layer base {
+  html {
+    background: var(--color-ink);
+    scroll-padding-top: 88px;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-paper);
+  }
+
+  /* Inhalt liegt ueber dem fixen Canvas-Layer (z 0) und dem Korn (z 5). */
+  section {
+    position: relative;
+    z-index: 10;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-brand);
+    outline-offset: 3px;
+  }
+
+  [data-theme='light'] :focus-visible,
+  [data-theme='light']:focus-visible {
+    outline-color: var(--color-ink);
+  }
+
+  ::selection {
+    background: var(--color-brand);
+    color: var(--color-ink);
+  }
+}
+
+/* ------------------------------------------------------------ Komponenten */
+
+@layer components {
+  /* --pm-panel-fill: z. B. mobil opak (Ink) statt 92 % */
+  .panel {
+    background: var(--pm-panel-fill, var(--color-panel));
+  }
+
+  /*
+   * Panel mit 6°-Oberkante (Markenfit, Review 14.10.2026): steigt nach rechts wie der Logo-Schnitt,
+   * .panel--cut-flip faellt nach rechts (gespiegelt). Geschnitten wird nur die Flaeche (::after mit
+   * Maske), nie der Text: der Abstandhalter ::before (padding-top 10,51 % der Inhaltsbreite) schiebt
+   * den Inhalt unter die Kante. Die Kantenhoehe folgt der eigenen Breite ueber eine SVG-Maske mit
+   * Seitenverhaeltnis 1000 : 105,1 (tan 6°) und mask-size 100% auto – ohne Container-Abfrage, damit
+   * auch schmale, inhaltsbreite Panels (Station-Intro) funktionieren.
+   * Ohne Masken-Support: volles Rechteck. Forced colors: volles Canvas-Rechteck (.panel unten).
+   */
+  .panel--cut {
+    --pm-cut-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 105.1'%3E%3Cpath d='M0 0H1000L0 105.1Z'/%3E%3C/svg%3E");
+    position: relative;
+    isolation: isolate;
+    background: none;
+  }
+
+  .panel--cut-flip {
+    --pm-cut-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 105.1'%3E%3Cpath d='M0 0H1000V105.1Z'/%3E%3C/svg%3E");
+  }
+
+  .panel--cut::before {
+    content: '';
+    display: block;
+    padding-top: 10.51%;
+  }
+
+  .panel--cut::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--pm-panel-fill, var(--color-panel));
+    -webkit-mask: var(--pm-cut-mask) 0 0 / 100% auto no-repeat, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: var(--pm-cut-mask) 0 0 / 100% auto no-repeat, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+
+  .panel-solid {
+    background: var(--color-ink);
+  }
+
+  .kicker {
+    font-family: var(--font-round);
+    font-weight: 600;
+    font-size: 0.875rem;
+    line-height: 1.3;
+    letter-spacing: 0.08em;
+  }
+
+  .lead {
+    font-family: var(--font-sans);
+    font-weight: 500;
+    font-variation-settings: 'wdth' 100;
+    font-size: clamp(1.125rem, 1.6vw, 1.5rem);
+    line-height: 1.45;
+  }
+
+  /*
+   * Schnitt-Maske: der Text bleibt immer im DOM und lesbar, animiert wird nur der Spalt.
+   * Die Maske ist NUR aktiv, solange ein Schnitt laeuft: ein stehender Spalt liest sich wie
+   * durchgestrichen, und jede aktive Maske schneidet Ober-/Unterlaengen ab, die ueber die Box
+   * hinausragen (gemessen: „g“ bei line-height 0.95; mask-clip: no-clip hilft in Chrome nicht).
+   * Aktiv: [data-cut-active] (Reveal in CutHeading, offenes 404-Ei in NotFoundEgg) und
+   * Hover/Fokus in .cut-hover (oeffnen → schliessen). Kein stehender Spalt im Ruhezustand
+   * (die Legacy-Klasse .is-cut ist entfernt). Reduced und forced-colors: nie eine Maske.
+   */
+  .cut-text {
+    --cut-open: 0px;
+    --cut-pos: 50%;
+  }
+
+  .cut-text[data-cut-active],
+  :is(.cut-hover:hover, .cut-hover:focus-visible) .cut-text,
+  .cut-text.cut-hover:is(:hover, :focus-visible) {
+    -webkit-mask-image: linear-gradient(
+      -6deg,
+      #000 0,
+      #000 calc(var(--cut-pos) - var(--cut-open) / 2),
+      transparent calc(var(--cut-pos) - var(--cut-open) / 2),
+      transparent calc(var(--cut-pos) + var(--cut-open) / 2),
+      #000 calc(var(--cut-pos) + var(--cut-open) / 2)
+    );
+    mask-image: linear-gradient(
+      -6deg,
+      #000 0,
+      #000 calc(var(--cut-pos) - var(--cut-open) / 2),
+      transparent calc(var(--cut-pos) - var(--cut-open) / 2),
+      transparent calc(var(--cut-pos) + var(--cut-open) / 2),
+      #000 calc(var(--cut-pos) + var(--cut-open) / 2)
+    );
+  }
+
+  /* Hover/Fokus: der Spalt oeffnet und schliesst einmal (--dur-slow <= --dur-cut). */
+  :is(.cut-hover:hover, .cut-hover:focus-visible) .cut-text,
+  .cut-text.cut-hover:is(:hover, :focus-visible) {
+    animation: pm-cut-flash var(--dur-slow) var(--ease-in-out);
+  }
+
+  /* Scroll-Reveal ohne JS; ohne Support oder bei reduzierter Bewegung statisch sichtbar. */
+  @supports (animation-timeline: view()) {
+    html[data-motion='full'] .reveal {
+      animation: pm-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 35%;
+    }
+  }
+
+  /* Hero-Nebenelemente warten auf die Intro-Animation; Failsafe nach 2,5 s. */
+  html.js[data-motion='full'] .hero-pre {
+    opacity: 0;
+    animation: pm-failsafe 0s 2.5s forwards;
+  }
+
+  .scene-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background: var(--color-ink);
+  }
+
+  .scene-fallback {
+    visibility: hidden;
+  }
+
+  html[data-scene='off'] .scene-fallback {
+    visibility: visible;
+  }
+
+  /* Papierwand: opake DOM-Flaeche mit statischer 6°-Kante oben und unten (§3.0, §3.4). */
+  .paper-wall {
+    position: relative;
+    z-index: 10;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    clip-path: polygon(0 var(--cut-rise), 100% 0, 100% calc(100% - var(--cut-rise)), 0 100%);
+    padding-block: calc(var(--cut-rise) + 2rem);
+    /* Mindesthoehe fuer den unsichtbaren Kamerasprung E (§3.0), auch auf sehr hohen Hochkant-Viewports. */
+    min-height: calc(200vh + 2 * var(--cut-rise));
+  }
+
+  /*
+   * Wand endet mit dem dunklen KLARTEXT!-Band (page.tsx): kein Papier-Keil zwischen Band und Kontakt.
+   * Das Band laeuft bis an die 6°-Unterkante der Wand (Clip oben), die Naht zeichnet KlartextSection.
+   */
+  .paper-wall--dark-end {
+    padding-bottom: 0;
+  }
+
+  /* Entwurfs-Anzeige per ?entwurf=1 (DraftMarker setzt html[data-show-drafts]). */
+  html[data-show-drafts]
+    :is([data-copy-status='entwurf'], [data-copy-status='beispiel'], [data-copy-status='offen']) {
+    outline: 2px dashed var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  html[data-show-drafts]
+    :is([data-copy-status='entwurf'], [data-copy-status='beispiel'], [data-copy-status='offen'])::after {
+    content: attr(data-copy-status);
+    display: inline-block;
+    margin-inline-start: 0.5em;
+    padding: 1px 6px;
+    border-radius: var(--radius-pill);
+    background: var(--color-brand);
+    color: var(--color-ink);
+    font: 600 12px/1.2 var(--font-round);
+    letter-spacing: 0.04em;
+    vertical-align: super;
+  }
+}
+
+/* ------------------------------------------------------------- Utilities */
+
+@utility wdth-75 {
+  font-variation-settings: 'wdth' 75;
+}
+
+@utility wdth-100 {
+  font-variation-settings: 'wdth' 100;
+}
+
+@utility wdth-112 {
+  font-variation-settings: 'wdth' 112;
+}
+
+@utility wdth-125 {
+  font-variation-settings: 'wdth' 125;
+}
+
+/* ------------------------------------------------------- Reduced Motion */
+
+html[data-motion='reduced'],
+html[data-motion='reduced'] * {
+  scroll-behavior: auto !important;
+}
+
+html[data-motion='reduced'] .reveal {
+  animation: none;
+}
+
+/* Reduzierte Bewegung: nie ein Spalt im Text, auch nicht bei Hover oder in Legacy-Nutzungen. */
+html[data-motion='reduced'] .cut-text {
+  -webkit-mask-image: none;
+  mask-image: none;
+  animation: none;
+}
+
+/* -------------------------------------------------------- Forced Colors */
+
+@media (forced-colors: active) {
+  .cut-text {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: none;
+  }
+
+  .panel {
+    background: Canvas;
+  }
+
+  .panel--cut::after {
+    display: none;
+  }
+
+  :focus-visible {
+    outline-color: Highlight;
+  }
+}
